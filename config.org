@@ -1,0 +1,693 @@
+#+TITLE: config.org --- My personal GNU Emacs configuration
+#+AUTHOR: Geoff T. Wark
+
+This config relies heavily on [[https://github.com/jwiegley/use-package][use-package]] by [[http://newartisans.com/][John Wiegley]]. Further inspiration comes from [[http://www.danielmai.net/][Daniel Mai]], [[http://sachachua.com/blog/][Sacha Chua]], and [[http://emacs-fu.blogspot.com/][Dirk-Jan C. Binnema]]. Smaller references are provided inline when relevant.
+
+I highly recommend running [[https://www.emacswiki.org/emacs/EmacsAsDaemon][Emacs as a daemon]] for extra speed and reliability. It may also greatly benefit you to [[https://www.emacswiki.org/emacs/MovingTheCtrlKey][move the Ctrl key]].
+
+* Move the custom-file
+
+Give the customization settings their own file instead of appending to [[file:init.el][init.el]].
+
+#+BEGIN_SRC emacs-lisp
+  ;; Skip this on Windows for now because of a weird 'file not found' error
+  (when (not (eq system-type 'windows-nt))
+    (setq custom-file (expand-file-name "custom.el" user-emacs-directory))
+    (load custom-file))
+#+END_SRC
+
+* User Interface
+** Theme
+
+[[http://kippura.org/zenburnpage/][Zenburn]] is low-contrast and easy on the eyes. Sometimes I will switch to using [[https://github.com/n3mo/cyberpunk-theme.el][Cyberpunk]] because /aethetic/.
+
+#+BEGIN_SRC emacs-lisp
+  (use-package zenburn-theme
+    :ensure t
+    :init
+    (load-theme 'zenburn t))
+
+  (use-package cyberpunk-theme
+    :defer t
+    :ensure t)
+
+  ;; Italicize comments
+  (make-face-italic 'font-lock-comment-face)
+
+  ;; Make whitespace/region colors more obvious
+  (setq-default show-trailing-whitespace 1)
+  (set-face-attribute 'trailing-whitespace nil :background "orange")
+  (set-face-attribute 'region nil :background "white smoke" :foreground "black")
+#+END_SRC
+
+** Font
+
+Ensure that you have [[https://fedorahosted.org/liberation-fonts/][Liberation Mono]] installed.
+
+#+BEGIN_SRC emacs-lisp
+  (add-to-list 'default-frame-alist '(font . "Liberation Mono-10.5"))
+#+END_SRC
+
+** Cursor
+
+The cursor is difficult for me to find at times. Let's make it bright red and stop that damn blinking.
+
+#+BEGIN_SRC emacs-lisp
+  ;; For non-daemon Emacs
+  (set-cursor-color "red")
+  ;; For daemon Emacs
+  (add-to-list 'default-frame-alist '(cursor-color . "red"))
+
+  (blink-cursor-mode -1)
+#+END_SRC
+
+** Miscellaneous
+
+#+BEGIN_SRC emacs-lisp
+  ;; Flash the screen instead of making an audible ding
+  (setq visible-bell t)
+
+  ;; Focus the current line
+  (global-hl-line-mode 1)
+
+  ;; Indicate in the fringe when the buffer ends
+  (toggle-indicate-empty-lines)
+
+  ;; Make window handling (i.e. how the frames are partitioned) more convienent.
+  ;; Use `C-c left` for undo and `C-c right` for redo.
+  (winner-mode 1)
+#+END_SRC
+
+* Sane Defaults
+
+Most of these come from [[https://github.com/magnars][Magnar Sveen]].
+
+#+BEGIN_SRC emacs-lisp
+  ;; ALWAYS use UTF-8 encoding
+  (setq locale-coding-system 'utf-8)
+  (set-terminal-coding-system 'utf-8)
+  (set-keyboard-coding-system 'utf-8)
+  (set-selection-coding-system 'utf-8)
+  (prefer-coding-system 'utf-8)
+
+  ;; Move to trash instead of deleting
+  (setq delete-by-moving-to-trash t)
+
+  ;; Turn off line wrapping
+  (setq-default truncate-lines 1)
+
+  ;; Delete selected region if/when typed in
+  (delete-selection-mode 1)
+
+  ;; Show column number in the mode line
+  (column-number-mode 1)
+
+  ;; Lines sould be 80 characters wide
+  (setq-default fill-column 80)
+
+  ;; Sentences do NOT need double spaces to end. Period.
+  (set-default 'sentence-end-double-space nil)
+
+  ;; Increase undo history size
+  (setq undo-limit 1000000)
+  (setq undo-strong-limit 2000000)
+#+END_SRC
+
+* Indentation
+
+I *hate* tabs! >:(
+
+#+BEGIN_SRC emacs-lisp
+  (setq-default indent-tabs-mode nil)
+  (setq-default tab-width 2)
+  (setq-default c-basic-offset 4)
+  (c-set-offset 'case-label '+)
+  (setq css-indent-offset 2)
+  (setq web-mode-markup-indent-offset 2)
+  (add-hook 'makefile-mode-hook (lambda () (setq tab-width 3)))
+#+END_SRC
+
+* Custom Functions
+
+Small yet useful functions and their key bindings. Many are taken or adapted from various posts around the Internet.
+
+#+BEGIN_SRC emacs-lisp
+  (defun my/maximize-and-split-frame (&optional frame)
+    "A workaround to get a maximized and split window by default when using
+  `emacsclient'."
+    (with-selected-frame (or frame (selected-frame))
+      (toggle-frame-maximized)
+      (split-window-right)))
+  ;; Do this when creating frames with `emacsclient'
+  (add-hook 'after-make-frame-functions 'my/maximize-and-split-frame)
+  ;; Do this when using Windows (aka NOT running `emacsclient')
+  (when (eq system-type 'windows-nt)
+    (my/maximize-and-split-frame))
+
+  (defun my/finalize-switch-theme ()
+    "Used to restore custom UI settings when switching themes."
+    (set-cursor-color "red")
+    (make-face-italic 'font-lock-comment-face)
+    (set-face-attribute 'trailing-whitespace nil :background "orange")
+    (set-face-attribute 'region nil :background "white smoke" :foreground "black"))
+
+  (defun my/switch-theme (theme)
+    "Disable current theme then load desired theme.
+
+  `my/finalize-switch-theme' is run at the end."
+    ;; This interactive call is taken from `load-theme'
+    (interactive
+     (list
+      (intern (completing-read "Load custom theme: "
+                               (mapc 'symbol-name
+                                     (custom-available-themes))))))
+    (let ((enabled-themes custom-enabled-themes))
+      (mapc #'disable-theme custom-enabled-themes)
+      (load-theme theme t))
+    (my/finalize-switch-theme))
+
+  (defun my/change-font-height (x)
+    "Change the font height based on user input.
+
+  This input is multiplied by 10 to match Emacs convention."
+    (interactive "xEnter desired font height: ")
+    (set-face-attribute 'default nil :height (truncate (* x 10)))
+    (message "The font height is now %s" x))
+
+  (defun my/untabify-buffer ()
+    "Run `untabify' on the entire buffer."
+    (interactive)
+    (if (y-or-n-p "Change tabs to spaces?")
+        (progn
+          (untabify (point-min) (point-max))
+          (message "All tabs are now spaces."))))
+  (global-set-key (kbd "C-c U") 'my/untabify-buffer)
+
+  (defun my/rename-current-buffer-file ()
+    "Renames the current buffer and the file it is visiting."
+    (interactive)
+    (let ((name (buffer-name))
+          (filename (buffer-file-name)))
+      (if (not (and filename (file-exists-p filename)))
+          (error "Buffer '%s' is not visiting a file!" name)
+        (let ((new-name (read-file-name "New name: " filename)))
+          (if (get-buffer new-name)
+              (error "A buffer named '%s' already exists!" new-name)
+            (rename-file filename new-name 1)
+            (rename-buffer new-name)
+            (set-visited-file-name new-name)
+            (set-buffer-modified-p nil)
+            (message "File '%s' successfully renamed to '%s'."
+                     name (file-name-nondirectory new-name)))))))
+  (global-set-key (kbd "C-x C-r") 'my/rename-current-buffer-file)
+
+  (defun my/find-file-as-root ()
+    "Find file as root (if needed)."
+    (interactive)
+    (let ((file (ido-read-file-name "Edit as root: ")))
+      (unless (file-writable-p file)
+        (setq file (concat "/sudo:root@localhost:" file)))
+      (find-file file)))
+  (global-set-key (kbd "C-x F") 'my/find-file-as-root)
+#+END_SRC
+
+* Packages
+** ace-jump-mode
+
+A quick cursor location minor mode for Emacs.
+
+#+BEGIN_SRC emacs-lisp
+  (use-package ace-jump-mode
+    :ensure t)
+#+END_SRC
+
+** column-marker
+
+Put a subtle hint at column 81 to show that the code is getting too long.
+
+#+BEGIN_SRC emacs-lisp
+  (use-package column-marker
+    :ensure t
+    :config
+    (set-face-attribute 'column-marker-1 nil :background "black")
+    (add-hook 'find-file-hook (lambda () (interactive) (column-marker-1 81))))
+#+END_SRC
+
+** company
+
+COMPlete ANYthing.
+
+#+BEGIN_SRC emacs-lisp
+  (use-package company
+    :ensure t
+    :diminish company-mode
+    :init
+    (add-hook 'after-init-hook 'global-company-mode))
+#+END_SRC
+
+** csharp-mode
+
+So I can avoid Visual Studio like the [[https://www.youtube.com/watch?v=Vpuv7VPb2rA][plague]] it is.
+
+#+BEGIN_SRC emacs-lisp
+  (use-package csharp-mode
+    :ensure t)
+#+END_SRC
+
+** elfeed
+
+An Emacs web feeds client.
+
+I literally only use it to manage/view my YouTube subscriptions.
+
+#+BEGIN_SRC emacs-lisp
+  (use-package elfeed
+    :ensure t
+    :init
+    (global-set-key (kbd "C-x w") 'elfeed))
+#+END_SRC
+
+** emojify
+
+A goofy package that adds emoji support to Emacs. Mostly just use it for :beer:.
+
+#+BEGIN_SRC emacs-lisp
+  (use-package emojify
+    :ensure t
+    :init
+    (progn
+      (use-package company-emoji
+        :ensure t
+        :config
+        (add-to-list 'company-backends 'company-emoji))
+      (add-hook 'after-init-hook #'global-emojify-mode)))
+#+END_SRC
+
+** eshell
+
+Turn off some undesirable global modes.
+
+#+BEGIN_SRC emacs-lisp
+  (add-hook 'eshell-mode-hook (lambda ()
+                                (company-mode -1)
+                                (toggle-truncate-lines)))
+#+END_SRC
+
+** expand-region
+
+Expand the region by semantic units. Can be done multiple times in-a-row.
+
+#+BEGIN_SRC emacs-lisp
+  (use-package expand-region
+    :ensure t
+    :commands er/expand-region
+    :init
+    (bind-key "C-=" 'er/expand-region))
+#+END_SRC
+
+** flycheck
+
+Provides on-the-fly syntax checking for just about every language.
+
+#+BEGIN_SRC emacs-lisp
+  (when (not (eq system-type 'windows-nt))
+    (use-package flycheck
+      :ensure t
+      :diminish flycheck-mode
+      :init
+      (add-hook 'after-init-hook #'global-flycheck-mode)))
+#+END_SRC
+
+** flyspell
+
+Provides on-the-fly spell checking.
+
+#+BEGIN_SRC emacs-lisp
+  (use-package flyspell
+    :ensure t
+    :init
+    (setq flyspell-issue-message-flag nil))
+#+END_SRC
+
+** gist.el
+
+Interface with and use gist.github.com inside of Emacs.
+
+#+BEGIN_SRC emacs-lisp
+  (use-package gist
+    :ensure t
+    :defer t)
+#+END_SRC
+
+** git-gutter-fringe
+
+Display git diff in the fringe.
+
+#+BEGIN_SRC emacs-lisp
+  (use-package git-gutter-fringe
+    :ensure t
+    :init
+    (use-package fringe-helper
+      :ensure t)
+    :config
+    (progn
+      (set-face-foreground 'git-gutter-fr:added "green")
+      (set-face-foreground 'git-gutter-fr:deleted "blue")
+      (set-face-foreground 'git-gutter-fr:modified "yellow")
+      (global-git-gutter-mode 1)))
+#+END_SRC
+
+** google-maps
+
+Check Google Maps from within Emacs.
+
+#+BEGIN_SRC emacs-lisp
+  (use-package google-maps
+    :ensure t
+    :defer t)
+#+END_SRC
+
+** hl-indent
+
+Highlights indentation below the starting character of a line on subsequent lines.
+
+#+BEGIN_SRC emacs-lisp
+  (use-package hl-indent
+    :ensure t
+    :init
+    (add-hook 'prog-mode-hook 'hl-indent-mode)
+    :config
+    (set-face-attribute 'hl-indent-face nil :background "gray27"))
+#+END_SRC
+
+** Ido & Smex
+
+Greatly improve file and command completion.
+
+#+BEGIN_SRC emacs-lisp
+  (use-package ido
+    :init
+    (progn
+      (use-package ido-complete-space-or-hyphen
+        :ensure t)
+      (setq ido-everywhere 1)
+      (ido-mode 1)
+      (use-package ido-vertical-mode
+        :ensure t
+        :init
+        (progn
+          (ido-vertical-mode 1)
+          (setq ido-vertical-define-keys 'C-n-and-C-p-only)))
+      (use-package smex
+        :ensure t
+        :commands (smex smex-major-mode-commands)
+        :init
+        (progn
+          (smex-initialize)
+          (bind-key "M-x" 'smex)
+          (bind-key "M-X" 'smex-major-mode-commands)
+          (bind-key "C-c C-c M-x" 'execute-extended-command)))))
+#+END_SRC
+
+** ispell
+
+Use Aspell when on Windows.
+
+#+BEGIN_SRC emacs-lisp
+  (when (eq system-type 'windows-nt)
+    (setq-default ispell-program-name
+                  "C:/Program Files (x86)/Aspell/bin/aspell.exe"))
+#+END_SRC
+
+** js3-mode
+
+A chimeric fork of js2-mode and js-mode.
+
+#+BEGIN_SRC emacs-lisp
+  (use-package js3-mode
+    :ensure t
+    :init
+    (add-to-list 'auto-mode-alist '("\\.js$" . js3-mode)))
+#+END_SRC
+
+** magit
+
+A Git porcelain inside Emacs.
+
+#+BEGIN_SRC emacs-lisp
+  (use-package magit
+    :ensure t
+    :commands magit-status
+    :init
+    (bind-key "C-c g" 'magit-status)
+    :config
+    (progn
+      ;; fullscreen magit status
+      (defadvice magit-status (around magit-fullscreen activate)
+        (window-configuration-to-register :magit-fullscreen)
+        ad-do-it
+        (delete-other-windows))
+      (defun magit-quit-session ()
+        "Restores the previous window configuration and kills the magit buffer."
+        (interactive)
+        (kill-buffer)
+        (jump-to-register :magit-fullscreen))
+      (define-key magit-status-mode-map (kbd "q") 'magit-quit-session)))
+#+END_SRC
+
+** multiple-cursors
+
+Adds multi-cursor support.
+
+#+BEGIN_SRC emacs-lisp
+  (use-package multiple-cursors
+    :ensure t
+    :commands (mc/add-cursor-on-click mc/edit-lines)
+    :init
+    (progn
+      (bind-key "M-S-<mouse-1>" 'mc/add-cursor-on-click)
+      (bind-key "C-S-c C-S-c" 'mc/edit-lines)))
+#+END_SRC
+
+** nyan-mode
+
+Displays a modeline indicator of your current position in the buffer featuring everyone's favorite [[https://www.youtube.com/watch?v=wZZ7oFKsKzY][Nyan Cat]]!
+
+#+BEGIN_SRC emacs-lisp
+  (use-package nyan-mode
+    :ensure t
+    :init
+    (nyan-mode 1))
+#+END_SRC
+
+** Org mode
+
+You should consider reading the [[http://orgmode.org/guide/][compact guide]].
+
+#+BEGIN_SRC emacs-lisp
+  (define-key global-map "\C-cl" 'org-store-link)
+  (define-key global-map "\C-ca" 'org-agenda)
+  (setq org-log-done t)
+  (setq org-todo-keywords
+        '((sequence "TODO(t)" "STARTED(s)" "WAITING(w)" "RECURRING(r)" "|"
+                    "DONE(d)" "CANCELLED(c)" "DELEGATED(g)")))
+
+  (use-package org-bullets
+    :ensure t
+    :init
+    (add-hook 'org-mode-hook (lambda () (org-bullets-mode 1))))
+
+  ;; Turn on word wrapping for .org files
+  (add-hook 'org-mode-hook (lambda () (visual-line-mode)))
+
+  ;; Hide emphasis markers (e.g. *asterisk* for bold)
+  (setq org-hide-emphasis-markers t)
+
+  ;; Change the icon Org mode uses to indicate hidden content
+  (setq org-ellipsis "\u2935")            ; cornered arrow
+#+END_SRC
+
+** page-break-lines
+
+Show =^L= as a full line.
+
+#+BEGIN_SRC emacs-lisp
+  (use-package page-break-lines
+    :ensure t
+    :diminish page-break-lines-mode
+    :init
+    (global-page-break-lines-mode))
+#+END_SRC
+
+** projectile
+
+A project navigation and management library built for Emacs.
+
+#+BEGIN_SRC emacs-lisp
+  (use-package projectile
+    :ensure t
+    :init
+    (projectile-global-mode))
+#+END_SRC
+
+** python-mode
+
+Stop =:= from causing electric indent.
+
+#+BEGIN_SRC emacs-lisp
+  (add-hook 'python-mode-hook
+            (lambda ()
+              (setq electric-indent-chars (delq ?: electric-indent-chars))))
+#+END_SRC
+
+** rainbow-mode
+
+Displays strings representing colors with the color they represent as background.
+
+#+BEGIN_SRC emacs-lisp
+  (use-package rainbow-mode
+    :ensure t
+    :init
+    (add-hook 'css-mode-hook (lambda () (rainbow-mode 1))))
+#+END_SRC
+
+** rbenv
+
+Use rbenv to manage your Ruby versions within Emacs.
+
+#+BEGIN_SRC emacs-lisp
+  (use-package rbenv
+    :ensure t
+    :init
+    (progn
+      (setq rbenv-modeline-function 'rbenv--modeline-plain)
+      (global-rbenv-mode)))
+#+END_SRC
+
+** ruby-guard
+
+Run guard directly inside Emacs.
+
+#+BEGIN_SRC emacs-lisp
+  (use-package ruby-guard
+    :ensure t)
+#+END_SRC
+
+** scss-mode
+
+Major mode for editing .scss files.
+
+#+BEGIN_SRC emacs-lisp
+  (use-package scss-mode
+    :ensure t)
+#+END_SRC
+
+** simpleclip
+
+Make access of the system clipboard easy.
+
+#+BEGIN_SRC emacs-lisp
+  (use-package simpleclip
+    :ensure t
+    :init
+    (simpleclip-mode 1))
+#+END_SRC
+
+** smartparens
+
+Handles the pairing of parens and tries to be smart about it.
+
+#+BEGIN_SRC emacs-lisp
+  (use-package smartparens
+    :ensure t
+    :diminish smartparens-mode
+    :init
+    (progn
+      (require 'smartparens-config)
+      (smartparens-global-mode 1)))
+#+END_SRC
+
+** try
+
+Used to /try/ out packages without having to install them.
+
+#+BEGIN_SRC emacs-lisp
+  (use-package try
+    :ensure t)
+#+END_SRC
+
+** undo-tree
+
+Treat undo history as a tree.
+
+#+BEGIN_SRC emacs-lisp
+  (use-package undo-tree
+    :ensure t
+    :diminish undo-tree-mode
+    :init
+    (global-undo-tree-mode))
+#+END_SRC
+
+** web-mode
+
+Major mode for editing web templates.
+
+#+BEGIN_SRC emacs-lisp
+  (use-package web-mode
+    :ensure t
+    :init
+    (progn
+      (add-to-list 'auto-mode-alist '("\\.erb\\'" . web-mode))
+      (setq web-mode-enable-auto-pairing -1)))
+#+END_SRC
+
+** which-key
+
+Show possible completion of key bindings after user delay.
+
+#+BEGIN_SRC emacs-lisp
+  (use-package which-key
+    :ensure t
+    :diminish which-key-mode
+    :init
+    (which-key-mode))
+#+END_SRC
+
+** xkcd
+
+Read the [[https://xkcd.com/][xkcd web comic]] without leaving Emacs.
+
+#+BEGIN_SRC emacs-lisp
+  (use-package xkcd
+    :ensure t
+    :defer t)
+#+END_SRC
+
+** yasnippet
+
+Yet Another Snippet extension for Emacs.
+
+#+BEGIN_SRC emacs-lisp
+  (use-package yasnippet
+    :ensure t)
+#+END_SRC
+
+* Reset Org mode bindings
+
+=org-time-stamp-inactive= gets unbound somehow. Fix this.
+
+#+BEGIN_SRC emacs-lisp
+  (defun my/fix-org-mode-binds ()
+    "For use in `org-mode-hook'."
+    (local-set-key (kbd "C-c D") 'org-time-stamp-inactive))
+  (add-hook 'org-mode-hook 'my/fix-org-mode-binds)
+#+END_SRC
+
+* Ensure the config has loaded
+
+#+BEGIN_SRC emacs-lisp
+  (setq my/config-loaded t)
+  (message "+--------------------------------------+
+  | Config has been loaded successfully. |
+  +--------------------------------------+")
+#+END_SRC

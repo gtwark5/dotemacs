@@ -1,0 +1,15 @@
+#+TITLE: README.org --- My personal GNU Emacs configuration
+#+AUTHOR: Geoff T. Wark
+
+* Installation
+
+Simply copy everything to your =.emacs.d= folder (be sure to backup your previous files). Check out [[file:config.org][config.org]] and [[file:init.el][init.el]] for more info! :^)
+
+* !!For Windows Users!!
+
+You will likely need to install some additional GNU packages for this config to even work at all. I needed to grab LibPng and GnuTLS at minimum. Follow these links to search for and download them (*SourceForge warning*):
+
+- http://gnuwin32.sourceforge.net/packages.html
+- https://sourceforge.net/projects/ezwinports/files/
+
+Just place the binaries into the same =bin= folder where your =runemacs.exe= is.
